@@ -1,0 +1,21 @@
+node_modules/
+dist/
+tests/screenshots/
+.wrangler/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Local AI tooling and skills
+.impeccable/
+.impecable/
+.agents/
+.codex/
+.claude/
+.cursor/
+skills/
