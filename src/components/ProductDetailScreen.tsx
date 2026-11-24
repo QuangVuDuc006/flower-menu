@@ -1,34 +1,47 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Copy, Flower2, MessageCircleHeart, Sparkles } from 'lucide-react';
-import type { FlowerProduct } from '../types/flower';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Check, Copy, Flower2, MessageCircleHeart, Share2, Sparkles } from 'lucide-react';
+import type { FlowerProduct, ShopSettings } from '../types/flower';
+import { DEFAULT_SHOP_SETTINGS, sanitizeZaloUrl } from '../config/shop';
 import { copyTextToClipboard, formatVND } from '../utils/format';
 import { Button, FlowerImage, ProductCard, ZaloIcon } from './ui/Primitives';
 
 interface ProductDetailScreenProps {
   product: FlowerProduct;
   allProducts: FlowerProduct[];
+  settings?: ShopSettings;
+  isDemoMode?: boolean;
   onBack: () => void;
   onSelectProduct: (product: FlowerProduct) => void;
   onCopiedCode: (code: string) => void;
+  onSharedLink?: (method: 'native' | 'clipboard') => void;
   onOpenZalo: () => void;
 }
 
 export function ProductDetailScreen({
   product,
   allProducts,
+  settings,
+  isDemoMode = false,
   onBack,
   onSelectProduct,
   onCopiedCode,
+  onSharedLink,
   onOpenZalo,
 }: ProductDetailScreenProps) {
+  const currentSettings = settings || DEFAULT_SHOP_SETTINGS;
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [copyError, setCopyError] = useState('');
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     setActiveImageIndex(0);
     setCopied(false);
+    setShared(false);
+    setCopyError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    headingRef.current?.focus({ preventScroll: true });
   }, [product.id]);
 
   const handleCopyCode = async () => {
@@ -42,6 +55,34 @@ export function ProductDetailScreen({
     window.setTimeout(() => setCopied(false), 3000);
   };
 
+  const handleShare = async () => {
+    const shareUrl = window.location.href;
+    const shareData = {
+      title: `${product.name} — ${currentSettings.shopName || 'Tiệm Hoa'}`,
+      text: `Mẫu hoa ${product.name} (mã ${product.code}) tại ${currentSettings.shopName || 'tiệm hoa'}`,
+      url: shareUrl,
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.(shareData)) {
+      try {
+        await navigator.share(shareData);
+        onSharedLink?.('native');
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    const ok = await copyTextToClipboard(shareUrl);
+    if (ok) {
+      setShared(true);
+      onSharedLink?.('clipboard');
+      window.setTimeout(() => setShared(false), 3000);
+    }
+  };
+
   const relatedProducts = allProducts
     .filter((item) => item.isVisible && item.id !== product.id)
     .sort((a, b) => {
@@ -52,9 +93,16 @@ export function ProductDetailScreen({
     .slice(0, 4);
 
   const activeImage = product.images[activeImageIndex] || product.images[0];
+  const validZaloUrl = sanitizeZaloUrl(currentSettings.zaloUrl);
+
+  const priceNoteText = currentSettings.priceNote
+    ? currentSettings.priceNote
+    : isDemoMode
+    ? 'Giá minh họa · Dữ liệu xem thử'
+    : '';
 
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-7">
+    <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-7 focus:outline-none">
       {/* Intuitive Back Navigation */}
       <div className="mb-4 sm:mb-6">
         <button
@@ -77,6 +125,7 @@ export function ProductDetailScreen({
                 src={activeImage}
                 alt={`${product.name} — Mã ${product.code}`}
                 className="aspect-[4/5] w-full"
+                priority
               />
             </div>
           </div>
@@ -117,7 +166,7 @@ export function ProductDetailScreen({
 
         {/* Right Column: Product Information & Staff Consultation Code */}
         <div className="lg:col-span-6 lg:sticky lg:top-24 space-y-6">
-          {/* Category Badges & Code */}
+          {/* Category Badges, Featured Badge & Code */}
           <div className="space-y-3 border-b border-line pb-6">
             <div className="flex flex-wrap items-center gap-2">
               {product.categories.map((cat) => (
@@ -128,9 +177,18 @@ export function ProductDetailScreen({
                   {cat}
                 </span>
               ))}
+              {product.isFeatured && (
+                <span className="px-3 py-1 rounded-full bg-rose-soft border border-rose/50 text-xs font-semibold text-rose-deep">
+                  Nổi bật
+                </span>
+              )}
             </div>
 
-            <h1 className="font-serif text-3xl sm:text-4xl lg:text-[42px] font-semibold text-charcoal leading-[1.15]">
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-serif text-3xl sm:text-4xl lg:text-[42px] font-semibold text-charcoal leading-[1.15] focus:outline-none"
+            >
               {product.name}
             </h1>
 
@@ -139,9 +197,11 @@ export function ProductDetailScreen({
                 <span className="text-2xl sm:text-3xl font-semibold text-forest tabular-nums">
                   {formatVND(product.price)}
                 </span>
-                <span className="block text-xs text-stone mt-1">
-                  Giá minh họa · Dữ liệu DEMO
-                </span>
+                {priceNoteText && (
+                  <span className="block text-xs text-stone mt-1">
+                    {priceNoteText}
+                  </span>
+                )}
               </div>
               <div className="px-3 py-1.5 rounded-lg bg-paper border border-line-strong text-xs font-medium text-stone">
                 Mã mẫu:{' '}
@@ -175,7 +235,7 @@ export function ProductDetailScreen({
             )}
           </div>
 
-          {/* Primary Action Card: Show / Copy Code for Shop Staff */}
+          {/* Primary Action Card: Show / Copy Code for Shop Staff & Share */}
           <div className="rounded-2xl bg-paper border border-line-strong p-5 sm:p-6 space-y-4 shadow-[0_8px_24px_-12px_rgba(48,54,49,0.1)]">
             <div className="flex items-center justify-between gap-3 bg-cream/75 rounded-xl px-4 py-3.5 border border-line">
               <div>
@@ -190,21 +250,39 @@ export function ProductDetailScreen({
               </span>
             </div>
 
-            <Button
-              variant="primary"
-              size="lg"
-              fullWidth
-              onClick={handleCopyCode}
-              leftIcon={
-                copied ? (
-                  <Check className="w-5 h-5" />
-                ) : (
-                  <Copy className="w-4.5 h-4.5" />
-                )
-              }
-            >
-              {copied ? `Đã sao chép mã ${product.code}` : 'Sao chép mã mẫu'}
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <Button
+                variant="primary"
+                size="lg"
+                className="flex-1"
+                onClick={handleCopyCode}
+                leftIcon={
+                  copied ? (
+                    <Check className="w-5 h-5" />
+                  ) : (
+                    <Copy className="w-4.5 h-4.5" />
+                  )
+                }
+              >
+                {copied ? `Đã sao chép mã ${product.code}` : 'Sao chép mã mẫu'}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="lg"
+                className="sm:w-auto"
+                onClick={handleShare}
+                leftIcon={
+                  shared ? (
+                    <Check className="w-5 h-5 text-forest" />
+                  ) : (
+                    <Share2 className="w-4.5 h-4.5" />
+                  )
+                }
+              >
+                {shared ? 'Đã sao chép liên kết' : 'Chia sẻ mẫu hoa'}
+              </Button>
+            </div>
 
             {copyError && <p role="alert" className="text-sm text-charcoal">{copyError}</p>}
 
@@ -214,21 +292,25 @@ export function ProductDetailScreen({
                 <strong className="font-medium text-charcoal">
                   Hãy đưa mã mẫu này cho nhân viên để được tư vấn.
                 </strong>{' '}
-                Bạn cũng có thể sao chép mã để gửi nhanh qua Zalo của tiệm.
+                {validZaloUrl
+                  ? 'Bạn cũng có thể sao chép mã để gửi nhanh qua Zalo của tiệm.'
+                  : 'Bạn có thể đưa mã mẫu này khi liên hệ với cửa hàng.'}
               </p>
             </div>
 
-            <div className="pt-2 border-t border-line flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
-              <span className="text-stone">Cần hỏi trước khi ghé tiệm?</span>
-              <button
-                type="button"
-                onClick={onOpenZalo}
-                className="min-h-[40px] px-3 rounded-lg inline-flex items-center gap-1.5 font-medium text-forest hover:bg-forest-soft/75 transition-colors"
-              >
-                <ZaloIcon className="w-4 h-4" />
-                <span>Liên hệ Zalo · Mã {product.code}</span>
-              </button>
-            </div>
+            {validZaloUrl && (
+              <div className="pt-2 border-t border-line flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+                <span className="text-stone">Cần hỏi trước khi ghé tiệm?</span>
+                <button
+                  type="button"
+                  onClick={onOpenZalo}
+                  className="min-h-[40px] px-3 rounded-lg inline-flex items-center gap-1.5 font-medium text-forest hover:bg-forest-soft/75 transition-colors"
+                >
+                  <ZaloIcon className="w-4 h-4" />
+                  <span>Liên hệ Zalo · Mã {product.code}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="pt-1">

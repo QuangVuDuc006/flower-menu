@@ -1,4 +1,4 @@
-﻿const { chromium } = require(process.env.FLOWER_QA_NODE_MODULES || require('path').join(process.env.TEMP, 'flower-qa/node_modules/playwright'));
+const { chromium } = require(process.env.FLOWER_QA_NODE_MODULES || require('path').join(process.env.TEMP, 'flower-qa/node_modules/playwright'));
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 (async () => {
@@ -31,8 +31,7 @@ const fs = require('node:fs');
  await page.getByText('Đã sao chép mã mẫu BH-001', { exact: true }).waitFor();
  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'BH-001');
  await page.goto('http://127.0.0.1:5173/admin');
- await page.getByRole('button',{name:'Điền tài khoản mẫu'}).click();
- await page.getByRole('button',{name:'Đăng nhập quản lý',exact:true}).click();
+ await page.getByRole('button',{name:'Mở bản quản trị demo',exact:true}).click();
  await page.getByRole('heading',{name:'Danh sách mẫu hoa'}).waitFor();
  for (const width of [375,390,768,1024,1440]) {
  await page.setViewportSize({width,height:900});
@@ -63,14 +62,14 @@ const fs = require('node:fs');
  await page.getByRole('button',{name:'Lưu mẫu hoa',exact:true}).click();
  await page.getByRole('heading',{name:'Danh sách mẫu hoa'}).waitFor();
  assert(await page.getByText('Hoa đã sửa',{exact:true}).count());
- page.once('dialog',dialog=>dialog.accept());
- await page.getByRole('button',{name:'Ẩn mẫu',exact:true}).last().click();
- assert(await page.getByRole('button',{name:'Hiện mẫu',exact:true}).count() >= 2);
+ page.on('dialog',dialog=>dialog.accept());
+ await page.getByRole('button',{name:/^Ẩn/}).last().click();
+ const modalConfirm = page.getByRole('button',{name:'Ẩn mẫu hoa',exact:true});
+ if (await modalConfirm.isVisible({timeout: 1000}).catch(()=>false)) {
+  await modalConfirm.click();
+ }
+ assert(await page.getByRole('button',{name:/^Hiện/}).count() >= 2);
  console.log('PASS responsive catalog/admin/detail/forms, category/search, copy, demo login, invalid/valid upload, add/edit/hide',errors);
  assert.deepEqual(errors,[]);
  await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
-
-
-
-

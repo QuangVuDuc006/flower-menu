@@ -9,7 +9,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import type { FlowerProduct, ProductCategory } from '../types/flower';
+import type { CategoryItem, FlowerProduct, ProductCategory } from '../types/flower';
 import {
   PRODUCT_CATEGORIES,
   SAMPLE_GALLERY_CHOICES,
@@ -27,6 +27,7 @@ import {
 interface AdminFlowerFormScreenProps {
   editingProduct: FlowerProduct | null;
   existingProducts: FlowerProduct[];
+  categories?: CategoryItem[];
   onSave: (data: Omit<FlowerProduct, 'id' | 'updatedAt'>, existingId?: string) => void;
   onCancel: () => void;
 }
@@ -36,15 +37,24 @@ const QUICK_PRICES = [290000, 350000, 450000, 550000, 650000];
 export function AdminFlowerFormScreen({
   editingProduct,
   existingProducts,
+  categories,
   onSave,
   onCancel,
 }: AdminFlowerFormScreenProps) {
   const isEditMode = Boolean(editingProduct);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const categoryOptions = useMemo(() => {
+    if (categories && categories.length > 0) {
+      const active = categories.filter((c) => c.isActive).map((c) => c.name);
+      if (active.length > 0) return active;
+    }
+    return PRODUCT_CATEGORIES;
+  }, [categories]);
+
   const [name, setName] = useState(editingProduct?.name ?? '');
   const [primaryCategory, setPrimaryCategory] = useState<ProductCategory>(
-    editingProduct?.primaryCategory ?? 'Hoa bó'
+    editingProduct?.primaryCategory ?? categoryOptions[0] ?? 'Hoa bó'
   );
   const [extraCategories, setExtraCategories] = useState<ProductCategory[]>(
     editingProduct
@@ -120,7 +130,7 @@ export function AdminFlowerFormScreen({
 
     files.forEach((file) => {
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-        setErrors((prev) => ({ ...prev, images: 'Ch?n ?nh JPG, PNG ho?c WebP c? dung l??ng t?i ?a 5 MB.' }));
+        setErrors((prev) => ({ ...prev, images: 'Chọn ảnh JPG, PNG hoặc WebP có dung lượng tối đa 5 MB.' }));
         return;
       }
       const reader = new FileReader();
@@ -132,11 +142,11 @@ export function AdminFlowerFormScreen({
             setImages((prev) => [...prev, url]);
             setErrors((prev) => ({ ...prev, images: undefined }));
           };
-          image.onerror = () => setErrors((prev) => ({ ...prev, images: 'Kh?ng ??c ???c ?nh. Vui l?ng ch?n ?nh kh?c.' }));
+          image.onerror = () => setErrors((prev) => ({ ...prev, images: 'Không đọc được ảnh. Vui lòng chọn ảnh khác.' }));
           image.src = url;
         }
       };
-      reader.onerror = () => setErrors((prev) => ({ ...prev, images: 'Kh?ng ??c ???c t?p ?nh. Vui l?ng th? l?i.' }));
+      reader.onerror = () => setErrors((prev) => ({ ...prev, images: 'Không đọc được tệp ảnh. Vui lòng thử lại.' }));
       reader.readAsDataURL(file);
     });
 
@@ -438,7 +448,7 @@ export function AdminFlowerFormScreen({
                 aria-label="Chọn danh mục chính"
                 className="flex flex-wrap gap-2"
               >
-                {PRODUCT_CATEGORIES.map((category) => {
+                {categoryOptions.map((category) => {
                   const selected = primaryCategory === category;
                   return (
                     <button
@@ -469,7 +479,7 @@ export function AdminFlowerFormScreen({
                 Hiển thị thêm ở mục dịp tặng (không bắt buộc):
               </span>
               <div className="flex flex-wrap gap-2">
-                {PRODUCT_CATEGORIES.filter((c) => c !== primaryCategory).map((cat) => {
+                {categoryOptions.filter((c) => c !== primaryCategory).map((cat) => {
                   const checked = extraCategories.includes(cat);
                   return (
                     <button

@@ -1,12 +1,16 @@
-import { useMemo } from 'react';
-import { Search, Sparkles, X } from 'lucide-react';
-import type { FilterCategory, FlowerProduct } from '../types/flower';
+import { useEffect, useMemo, useState } from 'react';
+import { Flower2, Search, Sparkles, X } from 'lucide-react';
+import type { CategoryItem, FilterCategory, FlowerProduct, ShopSettings } from '../types/flower';
+import { DEFAULT_SHOP_SETTINGS } from '../config/shop';
 import { FILTER_CATEGORIES } from '../data/mockFlowers';
 import { normalizeVietnamese } from '../utils/format';
-import { CategoryChip, EmptyState, ProductCard } from './ui/Primitives';
+import { Button, CategoryChip, EmptyState, ProductCard } from './ui/Primitives';
 
 interface CatalogScreenProps {
   products: FlowerProduct[];
+  categories?: CategoryItem[];
+  settings?: ShopSettings;
+  isDemoMode?: boolean;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   selectedCategory: FilterCategory;
@@ -16,12 +20,31 @@ interface CatalogScreenProps {
 
 export function CatalogScreen({
   products,
+  categories,
+  settings,
+  isDemoMode = false,
   searchQuery,
   onSearchChange,
   selectedCategory,
   onCategoryChange,
   onSelectProduct,
 }: CatalogScreenProps) {
+  const currentSettings = settings || DEFAULT_SHOP_SETTINGS;
+  const [pageSize, setPageSize] = useState(24);
+
+  // Active category names from dynamic categories table or fallback
+  const activeCategoryNames = useMemo(() => {
+    if (categories && categories.length > 0) {
+      return categories.filter((c) => c.isActive).map((c) => c.name);
+    }
+    return FILTER_CATEGORIES.filter((c) => c !== 'Tất cả');
+  }, [categories]);
+
+  const chipCategories = useMemo(
+    () => ['Tất cả', ...activeCategoryNames],
+    [activeCategoryNames]
+  );
+
   // Customers only see visible arrangements
   const visibleProducts = useMemo(
     () => products.filter((item) => item.isVisible),
@@ -31,14 +54,25 @@ export function CatalogScreen({
   // Category counts for helpful context
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { 'Tất cả': visibleProducts.length };
-    for (const cat of FILTER_CATEGORIES) {
-      if (cat !== 'Tất cả') {
-        counts[cat] = visibleProducts.filter(
-          (p) => p.primaryCategory === cat || p.categories.includes(cat)
-        ).length;
-      }
+    for (const cat of activeCategoryNames) {
+      counts[cat] = visibleProducts.filter(
+        (p) => p.primaryCategory === cat || p.categories.includes(cat)
+      ).length;
     }
     return counts;
+  }, [visibleProducts, activeCategoryNames]);
+
+  // Sort visible products: isFeatured desc, sortOrder asc, code asc
+  const sortedVisibleProducts = useMemo(() => {
+    return [...visibleProducts].sort((a, b) => {
+      const featA = a.isFeatured ? 1 : 0;
+      const featB = b.isFeatured ? 1 : 0;
+      if (featA !== featB) return featB - featA;
+      const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 999999;
+      const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 999999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.code.localeCompare(b.code, 'vi', { numeric: true });
+    });
   }, [visibleProducts]);
 
   // Filter by category and diacritic-tolerant search query (name or code)
@@ -46,7 +80,7 @@ export function CatalogScreen({
     const normalizedQuery = normalizeVietnamese(searchQuery);
     const compactQuery = normalizedQuery.replace(/[-\s]/g, '');
 
-    return visibleProducts.filter((product) => {
+    return sortedVisibleProducts.filter((product) => {
       const matchesCategory =
         selectedCategory === 'Tất cả' ||
         product.primaryCategory === selectedCategory ||
@@ -67,7 +101,17 @@ export function CatalogScreen({
         normalizedCategory.includes(normalizedQuery)
       );
     });
-  }, [visibleProducts, selectedCategory, searchQuery]);
+  }, [sortedVisibleProducts, selectedCategory, searchQuery]);
+
+  // Reset page size when search query or category filter changes
+  useEffect(() => {
+    setPageSize(24);
+  }, [searchQuery, selectedCategory]);
+
+  const displayedProducts = useMemo(
+    () => filteredProducts.slice(0, pageSize),
+    [filteredProducts, pageSize]
+  );
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 || selectedCategory !== 'Tất cả';
@@ -78,7 +122,7 @@ export function CatalogScreen({
   };
 
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-8">
+    <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-8 focus:outline-none">
       {/* Subtle, Compact Welcome Section — Keeps catalog immediately accessible */}
       <section
         aria-labelledby="welcome-heading"
@@ -87,28 +131,33 @@ export function CatalogScreen({
         <div className="max-w-2xl">
           <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase text-forest mb-1.5">
             <Sparkles className="w-3.5 h-3.5 text-sage" />
-            <span>Menu hoa tươi tại quầy · DEMO</span>
+            <span>{isDemoMode ? 'Menu hoa tươi tại quầy · BẢN XEM THỬ' : 'Menu hoa tươi tại quầy'}</span>
           </p>
           <h1
             id="welcome-heading"
-            className="font-serif text-[28px] sm:text-4xl lg:text-[42px] font-semibold text-charcoal leading-[1.16] tracking-tight"
+            tabIndex={-1}
+            className="font-serif text-[28px] sm:text-4xl lg:text-[42px] font-semibold text-charcoal leading-[1.16] tracking-tight focus:outline-none"
           >
-            Hoa đẹp cho những khoảnh khắc đặc biệt
+            {currentSettings.welcomeHeading || 'Hoa đẹp cho những khoảnh khắc đặc biệt'}
           </h1>
           <p className="mt-2 text-sm sm:text-[15.5px] text-stone leading-relaxed">
-            Mời bạn xem các mẫu hoa hiện có tại tiệm. Khi chọn được mẫu ưng ý, bạn chỉ cần đưa{' '}
-            <span className="text-charcoal font-medium">mã mẫu</span> cho nhân viên để được chuẩn bị chu đáo.
+            {currentSettings.welcomeSubtitle || (
+              <>
+                Mời bạn xem các mẫu hoa hiện có tại tiệm. Khi chọn được mẫu ưng ý, bạn chỉ cần đưa{' '}
+                <span className="text-charcoal font-medium">mã mẫu</span> cho nhân viên để được chuẩn bị chu đáo.
+              </>
+            )}
           </p>
         </div>
 
-        {/* Quiet Editorial Note on Desktop */}
+        {/* Quiet Editorial Note on Desktop — Clean Botanical Note without fake photos */}
         <div className="hidden lg:flex items-center gap-3.5 rounded-2xl bg-cream/70 border border-line px-4 py-3 max-w-xs shrink-0">
-          <img
-            src="/flowers/placeholder.png"
-            alt=""
+          <div
+            className="w-10 h-10 rounded-xl bg-forest-soft border border-forest/15 flex items-center justify-center shrink-0 text-forest"
             aria-hidden="true"
-            className="w-12 h-14 rounded-lg object-cover border border-line shrink-0"
-          />
+          >
+            <Flower2 className="w-5 h-5" />
+          </div>
           <div className="text-xs leading-relaxed text-stone">
             <p className="font-medium text-charcoal">Hoa tươi mới mỗi sáng</p>
             <p className="mt-0.5">
@@ -174,7 +223,7 @@ export function CatalogScreen({
           aria-label="Danh mục hoa"
           className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4 py-1 sm:mx-0 sm:px-0 sm:flex-wrap"
         >
-          {FILTER_CATEGORIES.map((category) => (
+          {chipCategories.map((category) => (
             <CategoryChip
               key={category}
               label={category}
@@ -189,15 +238,31 @@ export function CatalogScreen({
       {/* Flower Catalog Grid */}
       <section aria-label="Danh sách mẫu hoa" className="pt-5 sm:pt-7">
         {filteredProducts.length > 0 ? (
-          <div className="grid grid-cols-1 min-[360px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-5 lg:gap-7">
-            {filteredProducts.map((flower) => (
-              <ProductCard
-                key={flower.id}
-                product={flower}
-                onSelect={onSelectProduct}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-5 lg:gap-7">
+              {displayedProducts.map((flower, index) => (
+                <ProductCard
+                  key={flower.id}
+                  product={flower}
+                  onSelect={onSelectProduct}
+                  priority={index < 4}
+                />
+              ))}
+            </div>
+
+            {/* Paginate 24 items per page with "Xem thêm mẫu hoa" button */}
+            {pageSize < filteredProducts.length && (
+              <div className="pt-8 pb-4 text-center">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setPageSize((prev) => prev + 24)}
+                >
+                  Xem thêm mẫu hoa ({filteredProducts.length - pageSize} mẫu còn lại)
+                </Button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="py-6">
             <EmptyState

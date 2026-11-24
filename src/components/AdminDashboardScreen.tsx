@@ -1,24 +1,23 @@
 import { useMemo, useState } from 'react';
 import {
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Layers,
-  LogOut,
-  Pencil,
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
   Plus,
-  Search,
+  Star,
   X,
 } from 'lucide-react';
 import type { AppScreen, FlowerProduct } from '../types/flower';
-import { SHOP_INFO } from '../data/mockFlowers';
+
 import { formatVND, normalizeVietnamese } from '../utils/format';
 import {
-  BotanicalEmblem,
+  FlowerImage,
   Button,
+  DialogModal,
   EmptyState,
   FeedbackBanner,
-  StatusBadge,
 } from './ui/Primitives';
 
 type VisibilityFilter = 'all' | 'visible' | 'hidden';
@@ -27,9 +26,14 @@ interface AdminDashboardScreenProps {
   products: FlowerProduct[];
   bannerMessage: string | null;
   onDismissBanner: () => void;
-  onAddProduct: () => void;
+  onAddProduct?: () => void;
+  busy?: boolean;
   onEditProduct: (product: FlowerProduct) => void;
   onToggleVisibility: (productId: string) => void;
+  onToggleFeatured?: (productId: string) => void;
+  onMoveOrder?: (productId: string, direction: 'up' | 'down') => void;
+  activeTab?: 'products' | 'categories' | 'settings';
+  onSelectTab?: (tab: 'products' | 'categories' | 'settings') => void;
   onNavigate: (screen: AppScreen) => void;
   onLogout: () => void;
 }
@@ -39,22 +43,40 @@ export function AdminDashboardScreen({
   bannerMessage,
   onDismissBanner,
   onAddProduct,
+  busy = false,
   onEditProduct,
   onToggleVisibility,
+  onToggleFeatured,
+  onMoveOrder,
+  activeTab = 'products',
+  onSelectTab,
   onNavigate,
   onLogout,
 }: AdminDashboardScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<VisibilityFilter>('all');
+  const [hidingProduct, setHidingProduct] = useState<FlowerProduct | null>(null);
 
-  const counts = useMemo(() => {
-    const visible = products.filter((p) => p.isVisible).length;
-    return {
-      all: products.length,
-      visible,
-      hidden: products.length - visible,
-    };
-  }, [products]);
+  // B4 F17: Collapsible 3-step guide with localStorage persistence
+  const [guideCollapsed, setGuideCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('flower-admin-guide-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleGuide = () => {
+    setGuideCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('flower-admin-guide-collapsed', String(next));
+      } catch {
+        // ignore quota / storage errors
+      }
+      return next;
+    });
+  };
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = normalizeVietnamese(searchQuery);
@@ -79,50 +101,74 @@ export function AdminDashboardScreen({
 
   return (
     <div className="min-h-screen bg-ivory pb-16">
-      {/* Simple, Functional Admin Header */}
-      <header className="sticky top-0 z-30 bg-paper/95 backdrop-blur-md border-b border-line">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <BotanicalEmblem className="w-7 h-7 shrink-0" />
-            <div className="truncate">
-              <span className="font-serif text-xl sm:text-2xl font-semibold text-charcoal leading-none">
-                Quản lý {SHOP_INFO.name}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => onNavigate('design-system')}
-              className="hidden md:inline-flex items-center gap-1.5 min-h-[42px] px-3 rounded-xl text-xs font-medium text-stone hover:text-charcoal hover:bg-cream transition-colors"
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Hệ thống thiết kế</span>
-            </button>
+      {/* Admin Header with Navigation and Tabs */}
+      <header className="bg-paper border-b border-line">
+        <div className="mx-auto flex max-w-[1120px] items-center justify-between gap-2 px-4 py-3.5 md:px-8">
+          <span className="font-serif text-[19px] font-semibold md:text-2xl">Tiệm Hoa · Quản trị</span>
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => onNavigate('catalog')}
-              className="inline-flex items-center gap-1.5 min-h-[42px] px-3 rounded-xl text-xs sm:text-sm font-medium text-forest bg-forest-soft/75 hover:bg-forest-soft transition-colors"
+              className="min-h-11 rounded-xl border border-line px-3 text-xs font-medium text-forest hover:bg-cream transition-colors"
             >
-              <span>Xem menu khách</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              Xem menu khách
             </button>
             <button
               type="button"
               onClick={onLogout}
               aria-label="Đăng xuất quản lý"
-              className="inline-flex items-center gap-1.5 min-h-[42px] px-3 rounded-xl text-xs sm:text-sm font-medium text-stone hover:text-charcoal hover:bg-cream transition-colors"
+              className="min-h-11 rounded-xl border border-line px-3 text-xs font-medium text-forest hover:bg-cream transition-colors"
             >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Đăng xuất</span>
+              <span className="md:hidden">Thoát</span>
+              <span className="hidden md:inline">Đăng xuất</span>
             </button>
           </div>
         </div>
+
+        {/* Section Tabs */}
+        {onSelectTab && (
+          <div className="mx-auto flex max-w-[1120px] gap-2 px-4 pb-2.5 md:px-8 overflow-x-auto">
+            <button
+              type="button"
+              aria-current={activeTab === 'products' ? 'page' : undefined}
+              onClick={() => onSelectTab('products')}
+              className={`min-h-11 rounded-xl px-4 text-xs font-medium transition-colors ${
+                activeTab === 'products'
+                  ? 'bg-forest text-ivory'
+                  : 'bg-paper text-forest border border-line hover:bg-cream'
+              }`}
+            >
+              Mẫu hoa
+            </button>
+            <button
+              type="button"
+              aria-current={activeTab === 'categories' ? 'page' : undefined}
+              onClick={() => onSelectTab('categories')}
+              className={`min-h-11 rounded-xl px-4 text-xs font-medium transition-colors ${
+                activeTab === 'categories'
+                  ? 'bg-forest text-ivory'
+                  : 'bg-paper text-forest border border-line hover:bg-cream'
+              }`}
+            >
+              Danh mục
+            </button>
+            <button
+              type="button"
+              aria-current={activeTab === 'settings' ? 'page' : undefined}
+              onClick={() => onSelectTab('settings')}
+              className={`min-h-11 rounded-xl px-4 text-xs font-medium transition-colors ${
+                activeTab === 'settings'
+                  ? 'bg-forest text-ivory'
+                  : 'bg-paper text-forest border border-line hover:bg-cream'
+              }`}
+            >
+              Cài đặt tiệm
+            </button>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 space-y-6">
-        {/* Confirmation Banner After Save / Edit */}
+      <main className="mx-auto max-w-[1120px] space-y-5 px-4 pt-5 md:px-8 md:pt-8">
         {bannerMessage && (
           <FeedbackBanner
             variant="success"
@@ -132,173 +178,229 @@ export function AdminDashboardScreen({
           />
         )}
 
-        {/* Top Title + Prominent "Thêm mẫu hoa" Action */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="font-serif text-3xl sm:text-4xl font-semibold text-charcoal">
-              Danh sách mẫu hoa
-            </h1>
-            <p className="text-sm text-stone mt-1">
-              Bật hiển thị cho các mẫu hoa đang có sẵn tại tiệm hoặc tạm ẩn khi hết hoa theo mùa.
-            </p>
+        {/* Collapsible 3-step owner guide (B4 F17) */}
+        <section className="rounded-2xl border border-line bg-cream/70 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={toggleGuide}
+              aria-expanded={!guideCollapsed}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-charcoal hover:text-forest transition-colors text-left"
+            >
+              <HelpCircle className="size-4 text-forest shrink-0" />
+              <span>Hướng dẫn nhanh (3 bước)</span>
+              {guideCollapsed ? (
+                <ChevronDown className="size-4 text-stone" />
+              ) : (
+                <ChevronUp className="size-4 text-stone" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={toggleGuide}
+              className="text-xs text-stone hover:text-charcoal p-1"
+            >
+              {guideCollapsed ? 'Xem chi tiết' : 'Thu gọn'}
+            </button>
           </div>
-          <div className="shrink-0">
+
+          {!guideCollapsed && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3 pt-3 border-t border-line/60 text-xs text-stone leading-relaxed">
+              <div className="rounded-xl bg-paper p-3 border border-line/50">
+                <p className="font-semibold text-charcoal text-[13px] mb-1">1. Thêm mẫu & chụp ảnh</p>
+                <p>Bấm nút <strong>"Thêm mẫu hoa"</strong>, tải ảnh chụp bó hoa trực tiếp từ điện thoại.</p>
+              </div>
+              <div className="rounded-xl bg-paper p-3 border border-line/50">
+                <p className="font-semibold text-charcoal text-[13px] mb-1">2. Đặt giá & danh mục</p>
+                <p>Nhập giá bán và chọn danh mục chính (Hoa bó, Giỏ hoa, v.v.) để khách dễ tìm.</p>
+              </div>
+              <div className="rounded-xl bg-paper p-3 border border-line/50">
+                <p className="font-semibold text-charcoal text-[13px] mb-1">3. Bật hiển thị tức thì</p>
+                <p>Bật <strong>"Đang hiện"</strong> để khách quét mã QR tại tiệm nhìn thấy mẫu ngay.</p>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h1 className="font-serif text-[34px] font-semibold leading-tight md:text-[44px]">Danh sách mẫu hoa</h1>
+          {onAddProduct && (
             <Button
-              variant="primary"
-              size="lg"
-              fullWidth
+              disabled={busy}
               onClick={onAddProduct}
-              leftIcon={<Plus className="w-5 h-5" />}
-              className="sm:w-auto"
+              leftIcon={<Plus className="size-4" />}
+              className="w-full text-xs md:w-auto"
             >
               Thêm mẫu hoa
             </Button>
-          </div>
+          )}
         </div>
 
-        {/* Simple Filter Bar & Search */}
-        <div className="rounded-2xl bg-paper border border-line p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3.5">
-          {/* Visibility Filter Tabs */}
-          <div
-            role="tablist"
-            aria-label="Lọc theo trạng thái hiển thị"
-            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar"
-          >
-            {(
-              [
-                { id: 'all', label: 'Tất cả', count: counts.all },
-                { id: 'visible', label: 'Đang hiển thị', count: counts.visible },
-                { id: 'hidden', label: 'Đang ẩn', count: counts.hidden },
-              ] as const
-            ).map((tab) => {
-              const active = statusFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={`min-h-[42px] px-3.5 py-2 rounded-xl text-sm font-medium inline-flex items-center gap-2 whitespace-nowrap transition-colors ${
-                    active
-                      ? 'bg-forest text-ivory'
-                      : 'bg-cream/65 text-charcoal hover:bg-cream'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded-full tabular-nums ${
-                      active ? 'bg-ivory/20 text-ivory' : 'bg-paper text-stone'
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
+        {/* Filters and search */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-line bg-paper p-3 md:flex-row md:items-center">
+          <div role="group" aria-label="Lọc theo trạng thái hiển thị" className="flex shrink-0 gap-1.5">
+            {([
+              { id: 'all', label: 'Tất cả' },
+              { id: 'visible', label: 'Đang hiện' },
+              { id: 'hidden', label: 'Đã ẩn' },
+            ] as const).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={statusFilter === tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={
+                  'min-h-11 rounded-xl border px-3 text-xs font-medium text-forest transition-colors ' +
+                  (statusFilter === tab.id
+                    ? 'border-transparent bg-forest-soft'
+                    : 'border-line bg-paper hover:bg-cream')
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-
-          {/* Quick Admin Search */}
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 text-stone absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="relative min-w-0 flex-1">
             <input
               type="search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm tên hoa hoặc mã..."
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Tìm tên hoa hoặc mã mẫu…"
               aria-label="Tìm mẫu hoa trong danh sách quản lý"
-              className="w-full min-h-[44px] pl-10 pr-9 py-2 rounded-xl bg-ivory border border-line-strong text-sm text-charcoal placeholder:text-muted focus:border-forest focus:outline-none"
+              className="min-h-11 w-full rounded-xl border border-line bg-white px-3 pr-11 text-[13px] focus:outline-none focus:border-forest"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
                 aria-label="Xóa tìm kiếm"
-                className="w-9 h-9 absolute right-1 top-1/2 -translate-y-1/2 rounded-lg inline-flex items-center justify-center text-stone hover:text-charcoal"
+                className="absolute right-0 top-0 flex size-11 items-center justify-center text-stone hover:text-charcoal"
               >
-                <X className="w-4 h-4" />
+                <X className="size-4" />
               </button>
             )}
           </div>
         </div>
 
-        {/* Product List — Mobile Cards & Clean Desktop Rows (No cramped mobile tables) */}
-        {filteredProducts.length > 0 ? (
-          <div className="space-y-3">
-            {filteredProducts.map((product) => (
+        {filteredProducts.length ? (
+          <div className="overflow-hidden rounded-2xl border border-line bg-paper">
+            <div className="hidden grid-cols-[40fr_15fr_15fr_30fr] gap-4 bg-cream px-4 py-4 text-xs font-medium text-stone md:grid">
+              <span>Mẫu hoa</span>
+              <span>Giá bán</span>
+              <span>Trạng thái</span>
+              <span className="text-right">Thao tác</span>
+            </div>
+            {filteredProducts.map((product, idx) => (
               <article
                 key={product.id}
-                className={`rounded-2xl bg-paper border transition-colors p-4 sm:px-5 sm:py-4 ${
-                  product.isVisible
-                    ? 'border-line hover:border-sage/75'
-                    : 'border-line bg-cream/35'
-                }`}
+                className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-3 p-3.5 border-b border-line last:border-b-0 md:grid-cols-[40fr_15fr_15fr_30fr] md:gap-4 md:px-4 hover:bg-cream/30 transition-colors"
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  {/* Left: Thumbnail + Name + Code + Price */}
-                  <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 min-w-0">
-                    <div className="relative w-16 h-20 sm:w-[68px] sm:h-[84px] rounded-xl overflow-hidden bg-cream border border-line shrink-0">
-                      <img
-                        src={product.images[0]}
-                        alt={product.name}
-                        className={`w-full h-full object-cover transition-opacity ${
-                          product.isVisible ? 'opacity-100' : 'opacity-55 grayscale-[25%]'
-                        }`}
-                      />
+                <div className="col-span-2 flex min-w-0 items-center gap-3 md:col-span-1">
+                  {onMoveOrder && (
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        aria-label={`Chuyển lên: ${product.name}`}
+                        disabled={busy || idx === 0}
+                        onClick={() => onMoveOrder(product.id, 'up')}
+                        className="size-6 rounded border border-line flex items-center justify-center text-forest hover:bg-cream disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        <ArrowUp className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Chuyển xuống: ${product.name}`}
+                        disabled={busy || idx === filteredProducts.length - 1}
+                        onClick={() => onMoveOrder(product.id, 'down')}
+                        className="size-6 rounded border border-line flex items-center justify-center text-forest hover:bg-cream disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        <ArrowDown className="size-3" />
+                      </button>
                     </div>
+                  )}
 
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="px-2 py-0.5 rounded-md bg-cream border border-line text-xs font-semibold tracking-wider text-charcoal tabular-nums">
-                          {product.code}
+                  <FlowerImage
+                    src={product.images[0]}
+                    alt={product.name}
+                    className="size-12 shrink-0 rounded-[10px]"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h2 className="break-words text-sm font-medium">{product.name}</h2>
+                      {product.isFeatured && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-semibold inline-flex items-center gap-0.5">
+                          <Star className="size-2.5 fill-amber-500 text-amber-500" />
+                          Nổi bật
                         </span>
-                        <span className="text-xs text-stone">
-                          {product.primaryCategory}
-                        </span>
-                        <StatusBadge isVisible={product.isVisible} />
-                      </div>
-
-                      <h2 className="text-base sm:text-lg font-semibold text-charcoal leading-snug break-words">
-                        {product.name}
-                      </h2>
-
-                      <div className="flex items-center gap-3">
-                        <span className="text-[15px] sm:text-base font-semibold text-forest tabular-nums">
-                          {formatVND(product.price)}
-                        </span>
-                        <span className="text-xs text-muted hidden sm:inline">
-                          · Cập nhật: {product.updatedAt}
-                        </span>
-                      </div>
+                      )}
                     </div>
+                    <p className="mt-0.5 text-[11px] text-stone">
+                      {product.code} · {product.primaryCategory}
+                    </p>
                   </div>
+                </div>
 
-                  {/* Right / Bottom: Unmistakable Touch-Friendly Actions */}
-                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-2.5 pt-3 sm:pt-0 border-t sm:border-t-0 border-line/80 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="md"
+                <span className="text-[13px] font-medium tabular-nums">{formatVND(product.price)}</span>
+
+                <div className="flex items-center gap-2 md:contents">
+                  <span
+                    className={`inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-xs font-medium ${
+                      product.isVisible ? 'bg-forest-soft text-forest' : 'bg-cream text-stone'
+                    }`}
+                  >
+                    {product.isVisible ? 'Đang hiện' : 'Đã ẩn'}
+                  </span>
+
+                  <div className="flex items-center gap-1.5 md:justify-end">
+                    {onToggleFeatured && (
+                      <button
+                        type="button"
+                        aria-label={product.isFeatured ? `Bỏ nổi bật ${product.name}` : `Đánh dấu nổi bật ${product.name}`}
+                        disabled={busy}
+                        onClick={() => onToggleFeatured(product.id)}
+                        className={`min-h-11 rounded-xl border px-2.5 text-xs inline-flex items-center gap-1 transition-colors disabled:opacity-50 ${
+                          product.isFeatured
+                            ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                            : 'border-line text-stone hover:bg-cream hover:text-charcoal'
+                        }`}
+                        title={product.isFeatured ? 'Bỏ nổi bật' : 'Đánh dấu nổi bật'}
+                      >
+                        <Star
+                          className={`size-3.5 ${
+                            product.isFeatured ? 'fill-amber-500 text-amber-500' : 'text-stone'
+                          }`}
+                        />
+                        <span className="hidden lg:inline text-[11px]">
+                          {product.isFeatured ? 'Nổi bật' : 'Thường'}
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      aria-label={`Chỉnh sửa ${product.name}`}
+                      disabled={busy}
                       onClick={() => onEditProduct(product)}
-                      leftIcon={<Pencil className="w-4 h-4 text-stone" />}
+                      className="min-h-11 rounded-xl border border-line px-3 text-xs text-forest hover:bg-cream disabled:opacity-50"
                     >
-                      Chỉnh sửa
-                    </Button>
-                    <Button
-                      variant={product.isVisible ? 'secondary' : 'primary'}
-                      size="md"
+                      Sửa
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={product.isVisible ? `Ẩn mẫu ${product.name}` : `Hiện mẫu ${product.name}`}
+                      disabled={busy}
                       onClick={() => {
-                        if (!product.isVisible || window.confirm('?n m?u hoa n?y kh?i menu kh?ch xem?')) onToggleVisibility(product.id);
+                        if (product.isVisible) {
+                          setHidingProduct(product);
+                        } else {
+                          onToggleVisibility(product.id);
+                        }
                       }}
-                      leftIcon={
-                        product.isVisible ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )
-                      }
+                      className="min-h-11 rounded-xl border border-line px-3 text-xs text-forest hover:bg-cream disabled:opacity-50"
                     >
-                      {product.isVisible ? 'Ẩn mẫu' : 'Hiện mẫu'}
-                    </Button>
+                      {product.isVisible ? 'Ẩn' : 'Hiện'}
+                    </button>
                   </div>
                 </div>
               </article>
@@ -308,7 +410,7 @@ export function AdminDashboardScreen({
           <EmptyState
             icon="flower"
             title="Không có mẫu hoa nào trong mục này"
-            description="Bạn có thể xóa từ khóa tìm kiếm hoặc thêm một mẫu hoa mới vào danh mục của tiệm."
+            description="Bạn có thể xóa từ khóa tìm kiếm hoặc thêm một mẫu hoa mới."
             actionLabel="Xem tất cả mẫu trong tiệm"
             onAction={() => {
               setSearchQuery('');
@@ -317,6 +419,41 @@ export function AdminDashboardScreen({
           />
         )}
       </main>
+
+      {/* Accessible Hide Product Confirmation Dialog (A5) */}
+      <DialogModal
+        open={Boolean(hidingProduct)}
+        onClose={() => setHidingProduct(null)}
+        title="Ẩn mẫu hoa này?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-stone leading-relaxed">
+            Mẫu hoa <strong className="text-charcoal font-semibold">"{hidingProduct?.name}"</strong> ({hidingProduct?.code}) sẽ tạm thời không hiển thị cho khách xem khi quét mã QR tại quầy. Bạn có thể bật hiển thị lại bất kỳ lúc nào.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-end gap-2.5 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setHidingProduct(null)}
+            >
+              Giữ hiển thị
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="bg-danger text-ivory border-danger hover:bg-danger/90"
+              onClick={() => {
+                if (hidingProduct) {
+                  onToggleVisibility(hidingProduct.id);
+                  setHidingProduct(null);
+                }
+              }}
+            >
+              Ẩn mẫu hoa
+            </Button>
+          </div>
+        </div>
+      </DialogModal>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
@@ -198,6 +198,7 @@ export interface FlowerImageProps {
   className?: string;
   imgClassName?: string;
   forceLoading?: boolean;
+  priority?: boolean;
 }
 
 export function FlowerImage({
@@ -206,12 +207,19 @@ export function FlowerImage({
   className = 'aspect-[4/5]',
   imgClassName = '',
   forceLoading = false,
+  priority = false,
 }: FlowerImageProps) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     setErrored(false);
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setLoaded(true);
+    } else {
+      setLoaded(false);
+    }
   }, [src]);
 
   const showSkeleton = forceLoading || (!loaded && !errored);
@@ -234,9 +242,12 @@ export function FlowerImage({
       ) : (
         !forceLoading && (
           <img
+            ref={imgRef}
             src={src}
             alt={alt}
-            loading="lazy"
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
             onLoad={() => setLoaded(true)}
             onError={() => setErrored(true)}
             className={`w-full h-full object-cover transition-all duration-500 ${
@@ -252,13 +263,15 @@ export function FlowerImage({
 export interface ProductCardProps {
   product: FlowerProduct;
   onSelect: (product: FlowerProduct) => void;
+  priority?: boolean;
 }
 
-export function ProductCard({ product, onSelect }: ProductCardProps) {
+export function ProductCard({ product, onSelect, priority }: ProductCardProps) {
   return (
     <article className="group flex flex-col">
       <button
         type="button"
+        data-product-code={product.code}
         onClick={() => onSelect(product)}
         className="w-full text-left flex flex-col rounded-2xl bg-paper border border-line/85 p-2 sm:p-2.5 transition-all duration-200 hover:border-sage/75 hover:shadow-[0_10px_28px_-12px_rgba(48,54,49,0.14)] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-forest"
         aria-label={`Xem mẫu hoa ${product.name}, mã ${product.code}, giá ${formatVND(product.price)}`}
@@ -269,10 +282,16 @@ export function ProductCard({ product, onSelect }: ProductCardProps) {
             alt={`${product.name} — ${product.code}`}
             className="aspect-[4/5] w-full"
             imgClassName="group-hover:scale-[1.035]"
+            priority={priority}
           />
           <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-ivory/92 backdrop-blur-[2px] border border-line/80 text-[11px] font-medium tracking-wider text-charcoal tabular-nums">
             {product.code}
           </span>
+          {product.isFeatured && (
+            <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-rose-soft/95 backdrop-blur-[2px] border border-rose/50 text-[11px] font-semibold tracking-wide text-rose-deep shadow-xs">
+              Nổi bật
+            </span>
+          )}
         </div>
 
         <div className="pt-2.5 pb-1 px-1 flex flex-col gap-1">
@@ -510,7 +529,7 @@ export function EmptyState({
         )}
       </div>
       <h3 className="font-serif text-2xl font-semibold text-charcoal">{title}</h3>
-      <p className="text-sm sm:text-[15px] text-stone mt-2 leading-relaxed max-w-md mx-auto">
+      <p className="text-sm sm:text-[15.5px] text-stone mt-2 leading-relaxed max-w-md mx-auto">
         {description}
       </p>
       {actionLabel && onAction && (
@@ -535,13 +554,72 @@ export function DialogModal({
   title: string;
   children: React.ReactNode;
 }) {
+  const headingId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+
+    openerRef.current = document.activeElement as HTMLElement | null;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const timer = setTimeout(() => {
+      if (!panelRef.current) return;
+      const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length > 0) {
+        focusables[0].focus();
+      } else {
+        panelRef.current.focus();
+      }
+    }, 0);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusables = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || document.activeElement === panelRef.current) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+      if (openerRef.current && openerRef.current.isConnected) {
+        openerRef.current.focus();
+      }
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -552,15 +630,17 @@ export function DialogModal({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-dialog-title"
-        className="w-full max-w-md rounded-2xl bg-paper border border-line p-5 sm:p-6 shadow-[0_20px_50px_rgba(48,54,49,0.2)]"
+        aria-labelledby={headingId}
+        className="w-full max-w-md rounded-2xl bg-paper border border-line p-5 sm:p-6 shadow-[0_20px_50px_rgba(48,54,49,0.2)] focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 pb-3 border-b border-line">
           <h2
-            id="modal-dialog-title"
+            id={headingId}
             className="font-serif text-2xl font-semibold text-charcoal leading-tight"
           >
             {title}

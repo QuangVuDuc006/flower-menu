@@ -1,4 +1,4 @@
-import type { FlowerProduct, ProductCategory } from '../types/flower';
+import type { FlowerProduct } from '../types/flower';
 
 /**
  * Formats numeric VND price into Vietnamese currency notation, e.g. 350.000đ
@@ -23,7 +23,7 @@ export function normalizeVietnamese(input: string): string {
     .trim();
 }
 
-const CATEGORY_PREFIX_MAP: Record<ProductCategory, string> = {
+const CATEGORY_PREFIX_MAP: Record<string, string> = {
   'Hoa bó': 'BH',
   'Hoa giỏ': 'HG',
   'Hoa sinh nhật': 'SN',
@@ -33,17 +33,21 @@ const CATEGORY_PREFIX_MAP: Record<ProductCategory, string> = {
 
 /**
  * Automatically generates the next unique product code for a selected category
- * e.g. BH-006, HG-003, HC-002
+ * e.g. BH-006, HG-003, HC-002, HOA-001
+ * Supports any custom string category, falling back to prefix 'HOA'.
  */
 export function generateProductCode(
-  category: ProductCategory,
+  category: string,
   existingProducts: FlowerProduct[]
 ): string {
-  const prefix = CATEGORY_PREFIX_MAP[category] || 'BH';
+  const prefix = (category && CATEGORY_PREFIX_MAP[category]) || 'HOA';
   let maxNumber = 0;
 
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const codeRegex = new RegExp(`^${escapedPrefix}-(\\d+)$`);
+
   for (const item of existingProducts) {
-    const match = item.code.toUpperCase().match(new RegExp(`^${prefix}-(\\d+)$`));
+    const match = item.code.toUpperCase().match(codeRegex);
     if (match) {
       const num = parseInt(match[1], 10);
       if (num > maxNumber) {

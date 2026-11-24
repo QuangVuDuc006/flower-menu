@@ -153,7 +153,7 @@ export const SAMPLE_GALLERY_CHOICES: { label: string; url: string }[] = [
 export const SHOP_INFO = {
   name: 'Tiệm Hoa',
   tagline: 'Hoa tươi mỗi ngày',
-  hours: 'Chưa cập nhật',
-  address: 'Địa chỉ chưa cập nhật',
+  hours: '',
+  address: '',
   zaloUrl: import.meta.env.VITE_ZALO_URL ?? '',
 };
